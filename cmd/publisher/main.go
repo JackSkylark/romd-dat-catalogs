@@ -162,6 +162,13 @@ func runWithAdapters(args []string, out, errOut io.Writer, adapter acquirer, noI
 				return err
 			}
 			attempt = result.Attempt
+			for _, diagnostic := range result.Diagnostics {
+				encoded, err := json.Marshal(diagnostic)
+				if err != nil {
+					return err
+				}
+				fmt.Fprintf(errOut, "catalog %s response: %s\n", id, encoded)
+			}
 		case "redump":
 			results, err := adapter.Acquire(context.Background(), []redump.Catalog{{ID: id, System: c.ProviderSystemID, ExpectedName: c.ExpectedName, Platform: c.SystemID, Representation: c.Representation, PolicyVersion: "1", MinGames: c.Validation.MinimumGames, MinROMs: c.Validation.MinimumROMs}}, stage)
 			if err != nil {
