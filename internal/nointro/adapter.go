@@ -4,7 +4,9 @@ package nointro
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -39,11 +41,23 @@ func exportPending(raw []byte) bool {
 
 var number = regexp.MustCompile(`^[1-9][0-9]{0,5}$`)
 
+// ResponseDiagnostic contains only bounded structural metadata, never cookies, URLs or response text.
+type ResponseDiagnostic struct {
+	Attempt    int    `json:"attempt"`
+	Stage      string `json:"stage"`
+	Status     int    `json:"status"`
+	Bytes      int    `json:"bytes"`
+	BodySHA256 string `json:"bodySha256"`
+	PageKind   string `json:"pageKind,omitempty"`
+	Outcome    string `json:"outcome,omitempty"`
+}
+
 type Result struct {
-	Attempt publisher.Attempt
-	SHA256  string
-	Counts  publisher.Counts
-	Code    string
+	Diagnostics []ResponseDiagnostic
+	Attempt     publisher.Attempt
+	SHA256      string
+	Counts      publisher.Counts
+	Code        string
 }
 
 type Adapter struct {
@@ -65,38 +79,68 @@ func newAdapter(origin string, transport http.RoundTripper, gap time.Duration) *
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }}}
 }
 
-// Acquire runs at most four HTTP requests, with no automatic retry, under a
-// two-minute deadline. Every request shares a five-second host admission gate.
-// Retry-After is returned in the existing publisher attempt for signed retention.
-// Reuse one adapter per process; the CLI also honors restored retry deadlines.
+// Acquire makes at most three attempts within one two-minute deadline. Only
+// transport failures and unexpected preparation responses are retried. Queued
+// exports, provider cooldowns, form drift and invalid documents fail immediately.
 func (a *Adapter) Acquire(ctx context.Context, id string, c definitions.Catalog, stage string) (Result, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
+	if err := os.Mkdir(stage, 0700); err != nil {
+		return Result{}, err
+	}
+	var diagnostics []ResponseDiagnostic
+	for attempt := 1; ; attempt++ {
+		result, err := a.acquire(ctx, id, c, stage)
+		for i := range result.Diagnostics {
+			result.Diagnostics[i].Attempt = attempt
+		}
+		diagnostics = append(diagnostics, result.Diagnostics...)
+		result.Diagnostics = diagnostics
+		if err != nil || attempt == 3 || ctx.Err() != nil ||
+			(result.Code != "prepare_failed" && result.Code != "request_failed" && result.Code != "incomplete_response") {
+			return result, err
+		}
+		// Backoff supplements the shared provider admission gap; cancellation stops it.
+		timer := time.NewTimer(a.gap * time.Duration(1<<(attempt-1)))
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return result, ctx.Err()
+		}
+	}
+}
+
+func (a *Adapter) acquire(ctx context.Context, id string, c definitions.Catalog, stage string) (Result, error) {
 	r := Result{Attempt: publisher.Attempt{CatalogID: id, ExpectedName: c.ExpectedName, SourceURL: SourceURL(c.ProviderSystemID)}}
 	if a.client == nil || a.gate == nil || c.Provider != "no-intro" || c.Representation != "standard" || !number.MatchString(c.ProviderSystemID) || id != "no-intro/"+c.SystemID+"/standard" || c.ExpectedName == "" || c.Validation.MinimumGames < 1 || c.Validation.MinimumROMs < 1 {
 		return r, errors.New("invalid No-Intro adapter or reviewed catalog")
 	}
-	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
-	defer cancel()
 	select {
 	case a.gate <- struct{}{}:
 		defer func() { <-a.gate }()
 	case <-ctx.Done():
 		return r, ctx.Err()
 	}
-	if err := os.Mkdir(stage, 0700); err != nil {
-		return r, err
-	}
 	// Anonymous session cookies live only for this acquisition and are never logged.
 	jar, _ := cookiejar.New(nil)
 	client := *a.client
 	client.Jar = jar
-	fail := func(code string) (Result, error) { r.Code = code; r.Attempt.Failure = &r.Code; return r, nil }
+	fail := func(code string) (Result, error) {
+		r.Code = code
+		r.Attempt.Failure = &r.Code
+		if len(r.Diagnostics) > 0 {
+			r.Diagnostics[len(r.Diagnostics)-1].Outcome = code
+		}
+		return r, nil
+	}
 	if time.Until(a.next) > a.gap {
 		stamp := a.next.UTC().Format(time.RFC3339Nano)
 		r.Attempt.RetryAt = &stamp
 		return fail("provider_backoff")
 	}
 	source := a.origin + "/index.php?page=download&op=dat&s=" + c.ProviderSystemID
-	request := func(target string, values url.Values, limit int) ([]byte, *http.Response, string) {
+	request := func(step, target string, values url.Values, limit int) ([]byte, *http.Response, string) {
 		if delay := time.Until(a.next); delay > 0 {
 			timer := time.NewTimer(delay)
 			defer timer.Stop()
@@ -122,11 +166,14 @@ func (a *Adapter) Acquire(ctx context.Context, id string, c definitions.Catalog,
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
 		a.next = time.Now().Add(a.gap)
+		diagnostic := ResponseDiagnostic{Stage: step}
+		defer func() { r.Diagnostics = append(r.Diagnostics, diagnostic) }()
 		resp, err := client.Do(req)
 		if err != nil {
 			return nil, nil, "request_failed"
 		}
 		defer resp.Body.Close()
+		diagnostic.Status = resp.StatusCode
 		if resp.StatusCode == 429 || resp.StatusCode == 503 {
 			a.next = retryAt(resp.Header.Get("Retry-After"), time.Now())
 			if a.next.Before(time.Now().Add(a.gap)) {
@@ -146,6 +193,18 @@ func (a *Adapter) Acquire(ctx context.Context, id string, c definitions.Catalog,
 			return nil, resp, "size_limit"
 		}
 		b, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
+		diagnostic.Bytes = len(b)
+		diagnostic.BodySHA256 = fmt.Sprintf("%x", sha256.Sum256(b))
+		if step != "download" {
+			diagnostic.PageKind = "unrecognized"
+			if exportPending(b) {
+				diagnostic.PageKind = "queued_export"
+			} else if _, e := prepareForm(b, c); e == nil {
+				diagnostic.PageKind = "selection_form"
+			} else if _, e := downloadForm(b); e == nil {
+				diagnostic.PageKind = "download_form"
+			}
+		}
 		if err != nil {
 			return nil, resp, "incomplete_response"
 		}
@@ -154,7 +213,7 @@ func (a *Adapter) Acquire(ctx context.Context, id string, c definitions.Catalog,
 		}
 		return b, resp, ""
 	}
-	form, resp, code := request(source, nil, formLimit)
+	form, resp, code := request("selection", source, nil, formLimit)
 	if code != "" {
 		return fail(code)
 	}
@@ -168,7 +227,7 @@ func (a *Adapter) Acquire(ctx context.Context, id string, c definitions.Catalog,
 	if err != nil {
 		return fail("form_changed")
 	}
-	form, resp, code = request(source, values, formLimit)
+	form, resp, code = request("prepare", source, values, formLimit)
 	if code != "" {
 		return fail(code)
 	}
@@ -182,7 +241,7 @@ func (a *Adapter) Acquire(ctx context.Context, id string, c definitions.Catalog,
 	if err != nil {
 		return fail("unexpected_redirect")
 	}
-	form, resp, code = request(manager, nil, formLimit)
+	form, resp, code = request("manager", manager, nil, formLimit)
 	if code != "" {
 		return fail(code)
 	}
@@ -196,7 +255,7 @@ func (a *Adapter) Acquire(ctx context.Context, id string, c definitions.Catalog,
 	if err != nil {
 		return fail("form_changed")
 	}
-	raw, resp, code := request(manager, values, publisher.MaxInput)
+	raw, resp, code := request("download", manager, values, publisher.MaxInput)
 	if code != "" {
 		return fail(code)
 	}

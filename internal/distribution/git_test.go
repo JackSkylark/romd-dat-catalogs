@@ -190,8 +190,8 @@ func testGitPublicationLifecycle(t *testing.T, id string) {
 	if err := RestorePublication(failed, filepath.Join(f.dir, "failed-restored"), client); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := ReadCandidate(failed, candidate.CatalogID, candidate.Name, client); err == nil {
-		t.Fatal("unhealthy update accepted")
+	if _, raw, err := ReadCandidate(failed, candidate.CatalogID, candidate.Name, client); err != nil || !bytes.Equal(raw, original) {
+		t.Fatal("retained verified catalog unavailable", err)
 	}
 	// A real byte change creates a new Git commit and one latest RSS event.
 	changed := bytes.Replace(original, []byte("</datafile>"), []byte("<!-- document update -->\n</datafile>"), 1)

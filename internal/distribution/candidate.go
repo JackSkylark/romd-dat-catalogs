@@ -44,8 +44,8 @@ func ReadCandidate(index Index, id, name string, client *http.Client) (Candidate
 			return result, nil, errors.New("catalog system binding is invalid")
 		}
 	}
-	if catalog.Health != "healthy" || catalog.Artifact == nil {
-		return result, nil, errors.New("publisher could not confirm a healthy catalog; keep the installed version and retry later")
+	if catalog.Artifact == nil {
+		return result, nil, errors.New("no retained catalog artifact is available; keep the installed version and retry later")
 	}
 	ref := catalog.Artifact
 	asset, ok := index.Downloads[ref.Path]

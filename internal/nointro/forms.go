@@ -153,6 +153,11 @@ func prepareForm(raw []byte, c definitions.Catalog) (url.Values, error) {
 			}
 		}
 	}
+	// N64 currently omits nodump when no such records are offered. Include the
+	// category whenever its control exists; never submit an invented control.
+	if c.ProviderSystemID == "24" {
+		delete(values, "inc_nodump")
+	}
 	found := map[string]int{}
 	submit := ""
 	for _, i := range inputs.FindAllStringSubmatch(content, -1) {
@@ -169,8 +174,8 @@ func prepareForm(raw []byte, c definitions.Catalog) (url.Values, error) {
 		name := a["name"]
 		// Some systems expose a missing-in-action filter. Include these records
 		// with canonical names; legacy forms without this control remain valid.
-		if name == "inc_mia" {
-			values.Set("inc_mia", "1")
+		if name == "inc_mia" || (c.ProviderSystemID == "24" && name == "inc_nodump") {
+			values.Set(name, "1")
 		}
 		if prepareName.MatchString(name) && a["type"] == "submit" && a["value"] == "Prepare" {
 			if submit != "" {

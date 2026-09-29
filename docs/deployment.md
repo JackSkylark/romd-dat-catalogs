@@ -185,7 +185,7 @@ or incremental patch format is introduced. Issue #12 tracks growth measurement.
 
 Provider failures are signed as failed health while keeping the last document
 and its successful/change timestamps. Installed ROMD catalogs remain usable;
-new update checks show a failure and offer retry. A paused existing PSX catalog
+the reader can return a retained artifact for new subscription or update review while current signed metadata and artifact integrity still verify. Refresh health remains visible separately. Missing artifacts and trust, expiry, or integrity failures still block acquisition. A paused existing PSX catalog
 is reported as `publication_paused`, without deleting its DAT. A never-enabled
 catalog is not invented. Keep ordinary metadata publication enabled while
 pausing acquisition. Previously public DATs remain in Git history.

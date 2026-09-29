@@ -132,10 +132,15 @@ jobs:
           select_catalog no-intro/3ds/standard "$N3DS_ENABLED"
           ./bin/publisher "${args[@]}" > publication-summary.json
           {
-            printf '### Catalog acquisition result\n\n```json\n'
+            printf '### Catalog acquisition result\n\n'
+            jq -r '"\(.catalogs - .failed)/\(.catalogs) catalogs healthy. \(.failed) refreshes unavailable.\n", (.details | to_entries[] | select(.value.health != "healthy") | "- \(.key): refresh unavailable; " + (if .value.artifact then "last verified artifact retained" else "no artifact available" end))' publication-summary.json
+            printf '\nPublication success does not mean every upstream refresh succeeded.\n\n```json\n'
             cat publication-summary.json
             printf '\n```\n\nFailures preserve the last working artifact. New mirrors require recorded qualification.\n'
           } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$(jq '.failed' publication-summary.json)" -gt 0 ]; then
+            echo '::warning::Some catalog refreshes failed. Retained artifacts were preserved; see the acquisition summary.'
+          fi
       - name: Check out data repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

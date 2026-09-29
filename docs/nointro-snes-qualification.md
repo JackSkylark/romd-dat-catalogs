@@ -41,7 +41,7 @@ The current [robots guidance](https://datomatic.no-intro.org/robots.txt) has an
 empty Disallow, a five-second crawl delay, and one request per five seconds.
 The adapter serializes requests with at least five seconds between starts,
 30-second request timeouts, a two-minute total deadline, and at most four
-requests per acquisition. It makes **no automatic retries**. 429/503 terminate
+requests per attempt. It retries transport failures and unexpected preparation responses up to three total attempts within the same two-minute deadline, with paced backoff. Queued exports and form or document validation failures are not retried. 429/503 terminate
 the attempt, honor numeric/date Retry-After (one-minute default), and return
 that deadline through the existing signed snapshot. The CLI honors restored
 retry deadlines across daily runs. Reuse one adapter per provider/process.

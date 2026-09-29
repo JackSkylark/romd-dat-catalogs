@@ -45,8 +45,14 @@ func TestLocalSignedCandidate(t *testing.T) {
 	c.Health = "failed"
 	index.Snapshot.Catalogs[info.CatalogID] = c
 	if _, _, err = ReadCandidate(index, info.CatalogID, info.Name, client); err == nil {
-		t.Fatal("failed source accepted")
+		t.Fatal("tampered retained artifact accepted")
 	}
+	c.Artifact = nil
+	index.Snapshot.Catalogs[info.CatalogID] = c
+	if _, _, err = ReadCandidate(index, info.CatalogID, info.Name, client); err == nil {
+		t.Fatal("missing retained artifact accepted")
+	}
+
 	// A different independent trust root must reject an otherwise intact signed bundle.
 	other := makeFixture(t)
 	if _, err = RefreshIndex(other.root, BundleSite, filepath.Join(f.dir, "wrong-cache"), client); err == nil {
