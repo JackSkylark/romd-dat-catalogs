@@ -160,3 +160,15 @@ separate `tgcd` subscription from cartridge `tg16`. All four passed signed
 publication, reviewed import, full field/byte reconciliation, unchanged checks,
 outage retention and recovery in isolated ROMD. The enabled real catalog count
 is now 22. No other system variants or automation were enabled.
+
+
+## Batch 7: Xbox, Xbox 360, PS3 and Wii U
+
+The operator approved these four systems after batch 6. [Qualification and rollout
+evidence](redump-xbox-ps3-wiiu-qualification.md) records complete standard exports,
+Xbox 360's four observed upstream exclusions, cue and binary checks, and signed
+publication 3037. All 26 real catalogs are healthy, including NES after upstream
+export generation completed. The CLI selection cap was raised to 32 with
+full-registry regression coverage. Wii U passed reviewed import and unchanged
+checking in isolated ROMD; Xbox, Xbox 360 and PS3 acceptance is pending explicit
+browser approval, so this batch is not yet closed in application acceptance scope.

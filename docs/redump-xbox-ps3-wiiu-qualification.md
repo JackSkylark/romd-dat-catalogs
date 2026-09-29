@@ -86,8 +86,8 @@ exact byte preservation, immutable downloads, feeds and restoration.
 `mise run smoke`, definition validation and all four live production-adapter
 acquisitions also passed with the exact qualified hashes. NES returned
 `upstream_pending`, as expected from the captured provider response.
-Production publication and isolated ROMD acceptance are pending and are not
-implied by local qualification. No ROMD source, schema, API or runtime changes
+Local qualification alone does not imply production or application acceptance;
+the observed rollout results are recorded below. No ROMD source, schema, API or runtime changes
 are required for this catalog batch.
 
 
@@ -101,4 +101,38 @@ limits are unchanged. A new offline test runs every current definition through
 both active provider routing and all-paused mode, so future registry growth
 cannot silently outgrow the CLI. Oversized mixed selections fail before registry
 or network I/O. Full `mise run check` passed after the correction. The corrected
-implementation must be pinned before rerunning publication.
+implementation was subsequently pinned before rerunning publication.
+
+
+## Signed publication
+
+Implementation [PR 35](https://github.com/MoonlarkStudios/romd-dat-catalogs/pull/35)
+and capacity correction [PR 36](https://github.com/MoonlarkStudios/romd-dat-catalogs/pull/36)
+passed CI and merged. The final data workflow pins both references to
+`02ab4e05d556c794d14b73061723c67d02ce14f0` via
+[data PR 12](https://github.com/MoonlarkStudios/romd-dat-data/pull/12).
+[Run 35478946411](https://github.com/MoonlarkStudios/romd-dat-data/actions/runs/35478946411)
+completed signed publication 3037 at 2026-09-20T00:36:00.817915095Z. All 26 real
+catalogs are healthy. The original trust root and retained reader cache verified
+discovery, and all four immutable candidate downloads match the measured DAT
+bytes and hashes exactly. Each has a content event at sequence 84 and a full-commit
+URL under data commit `a1c61129364ae9b2bcbac52b024b16615f239765`.
+
+NES generation completed upstream. Its recovered Headered DAT has 7,654 entries,
+7,656 files and 3,916,757 bytes, SHA-256
+`b540371878284bebf631299dc79095c293c1020fdfffb15aa906ca30bb50ce6c`.
+The independent signed candidate download matches that length/hash. This is a
+genuine upstream revision, not a parser relaxation or locally fabricated change.
+The original public database membership audit was not repeated for this revision.
+The queue diagnostic fix remains in place for future temporary unavailability.
+
+## Application acceptance
+
+Wii U was discovered, reviewed and activated in the isolated ROMD environment,
+with 542 entries and 542 files. Its unchanged check returned UpToDate and its
+active download matches the signed DAT bytes. All 542 imported filenames, sizes
+and CRC32/MD5/SHA1 tuples also match, including 25,025,314,816-byte size values.
+The Xbox, Xbox 360 and PS3 systems
+are prepared; their pending-subscription/import actions await the browser approval
+requirement. No completed import, field comparison or outage test is claimed for
+those three yet.
